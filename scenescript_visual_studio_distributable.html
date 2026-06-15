@@ -1,0 +1,713 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SceneScript Visual Studio - AI Spatial Compiler</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700&family=Inter:wght@400;500;600;700&display=swap');
+        
+        body { font-family: 'Inter', sans-serif; background-color: #0f172a; color: #e2e8f0; overflow: hidden; }
+        .font-mono { font-family: 'JetBrains Mono', monospace; }
+        
+        /* Grid and Map Styling */
+        .grid-line { stroke: rgba(255, 255, 255, 0.05); stroke-width: 1; }
+        .wall { stroke: #38bdf8; stroke-width: 4; fill: none; transition: all 0.3s ease; }
+        .draggable { cursor: grab; transition: filter 0.1s; }
+        .draggable:active { cursor: grabbing; filter: brightness(1.3); }
+        .selected-glow { filter: drop-shadow(0 0 8px #38bdf8); }
+        
+        /* Asset Tokens */
+        .prop-bg { fill: rgba(148, 163, 184, 0.2); stroke: #94a3b8; stroke-width: 2; }
+        .prop-anchor-bg { fill: rgba(56, 189, 248, 0.2); stroke: #38bdf8; stroke-width: 2; }
+        .actor-bg { fill: rgba(250, 204, 21, 0.2); stroke: #facc15; stroke-width: 2; }
+        
+        /* Architectural Tokens */
+        .arch-window { fill: rgba(34, 211, 238, 0.3); stroke: #22d3ee; stroke-width: 2; }
+        .arch-door { fill: rgba(180, 83, 9, 0.3); stroke: #b45309; stroke-width: 2; }
+        
+        /* Camera Rig */
+        .camera-node { fill: #4ade80; }
+        .target-node { fill: #c084fc; stroke: #c084fc; stroke-width: 2; }
+        .fov-line { stroke: #4ade80; stroke-width: 2; stroke-dasharray: 6,4; fill: none; opacity: 0.7; }
+        .fov-cone { fill: rgba(74, 222, 128, 0.05); pointer-events: none; }
+        
+        .no-select { user-select: none; -webkit-user-select: none; }
+        
+        /* Scrollbar */
+        ::-webkit-scrollbar { width: 6px; }
+        ::-webkit-scrollbar-track { background: #0f172a; }
+        ::-webkit-scrollbar-thumb { background: #334155; border-radius: 3px; }
+        ::-webkit-scrollbar-thumb:hover { background: #475569; }
+
+        /* Custom UI Inputs */
+        .ss-input { background: #1e293b; border: 1px solid #334155; color: #e2e8f0; border-radius: 0.375rem; padding: 0.375rem 0.5rem; font-size: 0.875rem; width: 100%; transition: all 0.15s; }
+        .ss-input:focus { outline: none; border-color: #38bdf8; box-shadow: 0 0 0 1px #38bdf8; }
+        .ss-checkbox { accent-color: #38bdf8; width: 1rem; height: 1rem; cursor: pointer; }
+        .btn-toolbar { background: #1e293b; hover:bg-slate-700; color: #cbd5e1; font-size: 0.7rem; padding: 0.25rem 0.5rem; border-radius: 0.25rem; border: 1px solid #334155; transition: all 0.2s; display: flex; align-items: center; gap: 0.25rem; cursor: pointer; }
+        .btn-toolbar:hover { background: #334155; color: white; }
+        
+        input[type=range] { -webkit-appearance: none; width: 100%; background: transparent; }
+        input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; height: 14px; width: 14px; border-radius: 50%; background: #38bdf8; cursor: pointer; margin-top: -5px; }
+        input[type=range]::-webkit-slider-runnable-track { width: 100%; height: 4px; cursor: pointer; background: #334155; border-radius: 2px; }
+        input[type=range]:disabled::-webkit-slider-thumb { background: #64748b; }
+    </style>
+</head>
+<body class="h-screen flex flex-col no-select">
+
+    <header class="bg-slate-900 border-b border-slate-800 p-3 md:p-4 flex flex-col md:flex-row justify-between items-center z-10 shadow-md shrink-0 gap-3">
+        <div>
+            <h1 class="text-lg md:text-xl font-bold text-white tracking-tight flex items-center gap-2">
+                <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#38bdf8" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"></path><polyline points="3.27 6.96 12 12.01 20.73 6.96"></polyline><line x1="12" y1="22.08" x2="12" y2="12"></line></svg>
+                SceneScript Studio
+            </h1>
+            <p class="text-slate-400 text-[10px] md:text-xs mt-1 font-mono hidden md:block">Open-Source Spatial Framework</p>
+        </div>
+        
+        <!-- Project I/O Toolbar -->
+        <div class="flex flex-wrap items-center gap-2 bg-slate-950 p-1.5 rounded-lg border border-slate-800">
+            <button id="btnSaveLocal" class="btn-toolbar" title="Save to Browser Storage">
+                <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"></path><polyline points="17 21 17 13 7 13 7 21"></polyline><polyline points="7 3 7 8 15 8"></polyline></svg> Save Local
+            </button>
+            <button id="btnLoadLocal" class="btn-toolbar" title="Load from Browser Storage">
+                <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"></polyline><polyline points="1 20 1 14 7 14"></polyline><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path></svg> Load
+            </button>
+            <div class="w-px h-4 bg-slate-700 mx-1"></div>
+            <button id="btnExportJSON" class="btn-toolbar" title="Download JSON file">
+                <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg> Export
+            </button>
+            <label class="btn-toolbar cursor-pointer" title="Upload JSON file">
+                <input type="file" id="inputImportJSON" accept=".json" class="hidden">
+                <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="17 8 12 3 7 8"></polyline><line x1="12" y1="3" x2="12" y2="15"></line></svg> Import
+            </label>
+            <div class="w-px h-4 bg-slate-700 mx-1"></div>
+            <button id="btnReset" class="btn-toolbar text-red-400 hover:text-red-300 hover:bg-red-900/30 border-red-900/50" title="Reset to Default Scene">
+                <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="15" y1="9" x2="9" y2="15"></line><line x1="9" y1="9" x2="15" y2="15"></line></svg> Reset
+            </button>
+        </div>
+        
+        <div class="flex gap-2">
+            <button id="copyRulebookBtn" class="bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-600 font-medium py-1.5 px-3 rounded-lg transition-all flex items-center gap-2 text-xs">
+                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"></path><rect x="8" y="2" width="8" height="4" rx="1" ry="1"></rect></svg>
+                <span class="hidden xl:inline">Step 1: Copy Rulebook</span><span class="xl:hidden">Rulebook</span>
+            </button>
+            <button id="computeBtn" class="bg-sky-500 hover:bg-sky-400 text-white font-bold py-1.5 px-3 rounded-lg shadow-[0_0_10px_rgba(56,189,248,0.3)] transition-all flex items-center gap-2 text-xs">
+                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="4 14 10 14 10 20"></polyline><polyline points="20 10 14 10 14 4"></polyline><line x1="14" y1="10" x2="21" y2="3"></line><line x1="3" y1="21" x2="10" y2="14"></line></svg>
+                <span class="hidden xl:inline">Step 2: Copy SceneScript</span><span class="xl:hidden">Compile</span>
+            </button>
+        </div>
+    </header>
+
+    <main class="flex-1 flex flex-col lg:flex-row overflow-hidden relative">
+        
+        <!-- Interactive Map Panel (Left) -->
+        <div class="flex-1 p-2 flex flex-col items-center justify-center relative bg-[url('data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI1MCIgaGVpZ2h0PSI1MCI+PHBhdGggZD0iTTAgMGg1MHY1MEgweiIgZmlsbD0ibm9uZSIvPjxwb2x5Z29uIHBvaW50cz0iMCA1MCA1MCA1MCA1MCAwIiBmaWxsPSJyZ2JhKDI1NSwyNTUsMjU1LDAuMDMpIi8+PC9zdmc+')] overflow-hidden touch-none" id="mapWrapper">
+            
+            <div class="absolute top-4 left-4 z-10 flex gap-2">
+                <div class="bg-slate-900/80 backdrop-blur border border-slate-700 rounded p-2 text-xs font-mono text-sky-300">
+                    Map: <span id="mapSizeDisplay">16ft x 12ft</span>
+                </div>
+            </div>
+
+            <!-- Dynamic SVG Container (Resizes based on State) -->
+            <div class="relative bg-slate-900 rounded-lg shadow-2xl border border-slate-700 overflow-hidden shrink-0 transition-all duration-300" id="svgContainer" style="width: 800px; height: 600px; max-width: 95%; max-height: 95%;">
+                <svg id="roomMap" viewBox="0 0 800 600" class="w-full h-full touch-none" style="display:block;">
+                    <defs>
+                        <pattern id="grid" width="50" height="50" patternUnits="userSpaceOnUse">
+                            <path d="M 50 0 L 0 0 0 50" fill="none" class="grid-line" />
+                        </pattern>
+                        <marker id="arrowhead" markerWidth="6" markerHeight="6" refX="3" refY="3" orient="auto">
+                            <polygon points="0 0, 6 3, 0 6" fill="#e2e8f0" />
+                        </marker>
+                    </defs>
+                    
+                    <rect width="800" height="600" fill="url(#grid)" id="bgGrid" />
+                    <rect x="0" y="0" width="800" height="600" class="wall" id="roomWall" />
+
+                    <!-- Camera Visuals -->
+                    <polygon id="fovCone" points="0,0 0,0 0,0" class="fov-cone" />
+                    <line id="cameraLine" x1="0" y1="0" x2="0" y2="0" class="fov-line" />
+
+                    <!-- Dynamic Entities Container -->
+                    <g id="entityContainer"></g>
+                </svg>
+            </div>
+        </div>
+
+        <!-- Controls & Output Panel (Right) -->
+        <div class="w-full lg:w-[350px] xl:w-[400px] bg-slate-900 border-l border-slate-800 flex flex-col shadow-xl z-20 h-full shrink-0">
+            
+            <div class="flex-1 overflow-y-auto">
+                <!-- Global Settings & Dimensions -->
+                <div class="p-3 border-b border-slate-800">
+                    <h2 class="text-xs font-bold text-slate-300 mb-2 uppercase tracking-wide flex items-center justify-between cursor-pointer" onclick="document.getElementById('envSettings').classList.toggle('hidden')">
+                        Environment & Room Size <span class="text-slate-500">▼</span>
+                    </h2>
+                    <div id="envSettings" class="space-y-3">
+                        <div class="flex gap-2">
+                            <div class="flex-1">
+                                <label class="block text-[10px] font-semibold text-slate-400 mb-1">Room Width (ft)</label>
+                                <input type="number" id="roomW" class="ss-input text-xs" value="16" min="8" max="40">
+                            </div>
+                            <div class="flex-1">
+                                <label class="block text-[10px] font-semibold text-slate-400 mb-1">Room Depth (ft)</label>
+                                <input type="number" id="roomH" class="ss-input text-xs" value="12" min="8" max="40">
+                            </div>
+                        </div>
+                        <div>
+                            <label class="block text-[10px] font-semibold text-slate-400 mb-1">Prompt / Atmosphere</label>
+                            <input type="text" id="envDesc" class="ss-input text-xs" value="Old dusty room, wooden floorboards" placeholder="Environment description...">
+                        </div>
+                        <label class="flex items-center gap-2 bg-slate-950 p-2 rounded border border-slate-800 cursor-pointer hover:bg-slate-800 transition">
+                            <input type="checkbox" id="autoScaleToggle" class="ss-checkbox" checked>
+                            <span class="text-[10px] font-medium text-slate-300">Enforce Smart Auto-Scale (Relativity)</span>
+                        </label>
+                    </div>
+                </div>
+
+                <!-- Inspector Panel -->
+                <div id="inspectorPanel" class="p-3 border-b border-slate-800 bg-slate-800/20">
+                    <h2 class="text-xs font-bold text-sky-400 mb-2 uppercase tracking-wide">Inspector</h2>
+                    
+                    <div id="noSelectionMsg" class="text-[10px] text-slate-500 italic text-center p-3 bg-slate-950 rounded border border-dashed border-slate-700">
+                        Select an item on the canvas to edit properties.
+                    </div>
+
+                    <div id="activeItemForm" class="hidden space-y-2">
+                        <div class="flex justify-between items-center">
+                            <span id="itemIdDisplay" class="text-[10px] font-mono bg-slate-800 px-2 py-0.5 rounded text-sky-300">ID_Here</span>
+                            <button id="deleteBtn" class="text-[10px] text-red-400 hover:text-red-300 underline">Delete</button>
+                        </div>
+                        
+                        <div>
+                            <label class="block text-[9px] uppercase font-bold text-slate-400 mb-0.5">Short Name</label>
+                            <input type="text" id="propTitle" class="ss-input text-xs font-bold text-white">
+                        </div>
+
+                        <div>
+                            <label class="block text-[9px] uppercase font-bold text-slate-400 mb-0.5">Full Descriptive Prompt</label>
+                            <textarea id="propDesc" class="ss-input text-xs h-12 resize-none" placeholder="Describe appearance, pose, action..."></textarea>
+                        </div>
+
+                        <div class="grid grid-cols-2 gap-3 pt-1">
+                            <div>
+                                <label class="flex justify-between text-[9px] uppercase font-bold text-slate-400 mb-1">
+                                    Facing: <span id="rotValDisplay" class="text-sky-300">0°</span>
+                                </label>
+                                <input type="range" id="propRot" min="0" max="360" value="0">
+                            </div>
+                            <div>
+                                <label class="flex justify-between text-[9px] uppercase font-bold text-slate-400 mb-1">
+                                    Scale: <span id="scaleValDisplay" class="text-sky-300">1.0x</span>
+                                </label>
+                                <input type="range" id="propScale" min="0.2" max="3" step="0.1" value="1.0">
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Asset Management -->
+                <div class="p-3">
+                    <h2 class="text-xs font-bold text-slate-300 mb-2 uppercase tracking-wide">Add Items</h2>
+                    <div class="grid grid-cols-2 gap-2 mb-2">
+                        <button id="addActorBtn" class="bg-slate-800 hover:bg-slate-700 text-yellow-400 border border-yellow-900/50 py-1.5 rounded text-[10px] font-semibold flex items-center justify-center gap-1">
+                            + Add Actor/Char
+                        </button>
+                        <button id="addPropBtn" class="bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-600 py-1.5 rounded text-[10px] font-semibold flex items-center justify-center gap-1">
+                            + Add Prop/Item
+                        </button>
+                    </div>
+                    <div class="grid grid-cols-2 gap-2">
+                        <button id="addWindowBtn" class="bg-cyan-900/30 hover:bg-cyan-800/50 text-cyan-400 border border-cyan-800 py-1.5 rounded text-[10px] font-semibold flex items-center justify-center gap-1">
+                            + Add Window
+                        </button>
+                        <button id="addDoorBtn" class="bg-amber-900/30 hover:bg-amber-800/50 text-amber-500 border border-amber-800 py-1.5 rounded text-[10px] font-semibold flex items-center justify-center gap-1">
+                            + Add Door
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Output Area -->
+            <div class="h-[150px] md:h-[200px] bg-[#0d1117] border-t border-slate-800 relative shrink-0 flex flex-col">
+                <div class="px-2 py-1 border-b border-slate-800 flex justify-between items-center bg-slate-900">
+                    <h3 class="text-[9px] font-bold text-sky-400 font-mono tracking-wider">SCENESCRIPT COMPILER OUTPUT:</h3>
+                </div>
+                <textarea id="outputText" class="flex-1 w-full bg-transparent text-green-400 font-mono text-[9px] md:text-[10px] p-2 resize-none focus:outline-none" readonly placeholder="Click 'Step 2: Copy SceneScript' to compile logic..."></textarea>
+            </div>
+            
+        </div>
+    </main>
+
+    <script>
+        const SYSTEM_RULEBOOK = `SCENESCRIPT SPATIAL COMPILER (REV 4.0)
+
+You are the "SceneScript Spatial Compiler." Your primary directive is to resolve visual output into an accurate 3D representation based on strict spatial data.
+
+1. HIERARCHY OF AUTHORITY (STRICT)
+
+Coordinate/Rotation/Scale Data (TRUTH): Mathematical inputs override all "AI training bias."
+
+Physics Laws (GRAVITY/COLLISION): Assets MUST rest on the floor plane (Z=0). Assets MUST NOT overlap or merge silhouettes.
+
+Shadow/Lighting Logic: Light sources (Windows/Doors) determine shadow direction. Shadows must be consistent.
+
+Visual Bias (IGNORE): Training data (e.g., "beds go against walls") is secondary to user coordinate data.
+
+2. PHYSICAL INTEGRITY PROTOCOLS
+
+Shadow Consistency: The Window_1 coordinate acts as the primary light source. All objects in the scene MUST project shadows opposite to the window vector. No "global flat lighting."
+
+Semantic Isolation: Assets are distinct physical objects. If Asset1 (Bed) and Asset2 (Dog) occupy adjacent grid squares, there must be clear visual separation. NO MERGING/FUSION of distinct entities.
+
+Proportional Anchoring: The Prop_Anchor (e.g., Table) has a Scale Factor of 1.0. All other assets are mathematically scaled relative to this unit. If a bed is scaled at 1.0, it must appear naturally sized compared to the 1.0-scale table.
+
+3. FRUSTUM CULLING & CAMERA PHYSICS
+
+Camera Vector: The camera location and Focal Target create a directional vector.
+
+Frustum Culling: Any asset outside the line-of-sight frustum must be OMITTED (not rendered). Do not "cram" out-of-bounds objects into the scene.
+
+4. DIRECTIONAL FIDELITY
+
+Rotation Authority: The Rot value (degrees) is the absolute facing direction.
+
+Rotation-to-Adjective Mapper:
+
+If Rot is within 15° of the wall, the item is "Neatly Placed."
+
+If Rot deviates > 30° from wall alignment, the item MUST be rendered as "Crooked," "Askew," "Tilted," or "Pushed Haphazardly."`;
+
+        const GRID_SCALE = 50; // 50px = 1ft
+        let ROOM_WIDTH = 800; // 16ft default
+        let ROOM_HEIGHT = 600; // 12ft default
+        let entityCounter = { actor: 2, prop: 2, arch: 0 };
+        
+        // Define the default factory state
+        const getDefaultState = () => ({
+            room: { width: 16, height: 12 },
+            environment: "Old dusty room, wooden floorboards",
+            autoScale: true,
+            camera: { id: 'Camera', type: 'system', x: 400, y: 500, rot: 0, title: 'Camera Lens' },
+            target: { id: 'FocalTarget', type: 'system', x: 250, y: 300, rot: 0, title: 'Focus Point' },
+            items: [
+                { id: 'Prop_Anchor', type: 'prop', isAnchor: true, title: 'Wooden Table', prompt: 'large heavy oak table', x: 550, y: 300, w: 150, h: 100, rot: 0, scale: 1.0 },
+                { id: 'Prop_2', type: 'prop', isAnchor: false, title: 'Iron Bed', prompt: 'rusty iron bedframe', x: 150, y: 300, w: 120, h: 250, rot: 90, scale: 1.0 },
+                { id: 'Actor_1', type: 'actor', title: 'Golden Retriever', prompt: 'Sitting upright looking forward', x: 250, y: 150, r: 35, rot: 0, scale: 0.77 },
+                { id: 'Window_1', type: 'arch', subType: 'window', title: 'North Window', prompt: 'light streaming in', x: 400, y: 10, w: 150, h: 20, rot: 0, scale: 1.0 }
+            ]
+        });
+
+        let sceneState = getDefaultState();
+        let activeEntityId = null;
+        let draggedEntityId = null;
+        let dragOffset = { x: 0, y: 0 };
+
+        // DOM Elements
+        const svg = document.getElementById('roomMap');
+        const svgContainer = document.getElementById('svgContainer');
+        const bgGrid = document.getElementById('bgGrid');
+        const roomWall = document.getElementById('roomWall');
+        const entityContainer = document.getElementById('entityContainer');
+        const cameraLine = document.getElementById('cameraLine');
+        const fovCone = document.getElementById('fovCone');
+        const mapSizeDisplay = document.getElementById('mapSizeDisplay');
+
+        // Inputs
+        const inRoomW = document.getElementById('roomW');
+        const inRoomH = document.getElementById('roomH');
+        const envInput = document.getElementById('envDesc');
+        const autoScaleToggle = document.getElementById('autoScaleToggle');
+        
+        // Inspector
+        const inspForm = document.getElementById('activeItemForm');
+        const inspNoSel = document.getElementById('noSelectionMsg');
+        const inspId = document.getElementById('itemIdDisplay');
+        const inspTitle = document.getElementById('propTitle');
+        const inspDesc = document.getElementById('propDesc');
+        const inspRot = document.getElementById('propRot');
+        const inspRotVal = document.getElementById('rotValDisplay');
+        const inspScale = document.getElementById('propScale');
+        const inspScaleVal = document.getElementById('scaleValDisplay');
+        const inspDel = document.getElementById('deleteBtn');
+
+        // Output
+        const outputText = document.getElementById('outputText');
+
+        // --- STREAMING_CHUNK:Rendering Engine & Architecture ---
+        
+        function applyRoomDimensions() {
+            ROOM_WIDTH = sceneState.room.width * GRID_SCALE;
+            ROOM_HEIGHT = sceneState.room.height * GRID_SCALE;
+            
+            // Update UI Inputs to match state
+            inRoomW.value = sceneState.room.width;
+            inRoomH.value = sceneState.room.height;
+            mapSizeDisplay.textContent = `${sceneState.room.width}ft x ${sceneState.room.height}ft`;
+
+            // Adjust SVG Canvas constraints
+            svg.setAttribute('viewBox', `0 0 ${ROOM_WIDTH} ${ROOM_HEIGHT}`);
+            bgGrid.setAttribute('width', ROOM_WIDTH);
+            bgGrid.setAttribute('height', ROOM_HEIGHT);
+            roomWall.setAttribute('width', ROOM_WIDTH);
+            roomWall.setAttribute('height', ROOM_HEIGHT);
+            
+            // Adjust Container aspect ratio roughly for UI
+            const ratio = ROOM_WIDTH / ROOM_HEIGHT;
+            if(ratio > 1) {
+                svgContainer.style.width = '100%';
+                svgContainer.style.height = `calc(100% / ${ratio})`;
+            } else {
+                svgContainer.style.height = '100%';
+                svgContainer.style.width = `calc(100% * ${ratio})`;
+            }
+
+            // Clamp entities to new bounds
+            sceneState.camera.x = Math.min(sceneState.camera.x, ROOM_WIDTH);
+            sceneState.camera.y = Math.min(sceneState.camera.y, ROOM_HEIGHT);
+            sceneState.target.x = Math.min(sceneState.target.x, ROOM_WIDTH);
+            sceneState.target.y = Math.min(sceneState.target.y, ROOM_HEIGHT);
+            sceneState.items.forEach(item => {
+                item.x = Math.min(item.x, ROOM_WIDTH);
+                item.y = Math.min(item.y, ROOM_HEIGHT);
+            });
+        }
+
+        function getEntity(id) {
+            if (id === 'Camera') return sceneState.camera;
+            if (id === 'FocalTarget') return sceneState.target;
+            return sceneState.items.find(i => i.id === id);
+        }
+
+        function renderScene() {
+            applyRoomDimensions();
+            entityContainer.innerHTML = ''; 
+            
+            sceneState.items.forEach(item => {
+                const g = document.createElementNS("http://www.w3.org/2000/svg", "g");
+                g.setAttribute('class', `draggable ${item.id === activeEntityId ? 'selected-glow' : ''}`);
+                g.setAttribute('data-id', item.id);
+                g.setAttribute('transform', `translate(${item.x}, ${item.y}) rotate(${item.rot}) scale(${item.scale})`);
+
+                let shape;
+                if (item.type === 'prop') {
+                    shape = document.createElementNS("http://www.w3.org/2000/svg", "rect");
+                    shape.setAttribute('x', -item.w / 2);
+                    shape.setAttribute('y', -item.h / 2);
+                    shape.setAttribute('width', item.w);
+                    shape.setAttribute('height', item.h);
+                    shape.setAttribute('rx', 4);
+                    shape.setAttribute('class', item.isAnchor ? 'prop-anchor-bg' : 'prop-bg');
+                } else if (item.type === 'arch') {
+                    shape = document.createElementNS("http://www.w3.org/2000/svg", "rect");
+                    shape.setAttribute('x', -item.w / 2);
+                    shape.setAttribute('y', -item.h / 2);
+                    shape.setAttribute('width', item.w);
+                    shape.setAttribute('height', item.h);
+                    shape.setAttribute('class', item.subType === 'window' ? 'arch-window' : 'arch-door');
+                } else {
+                    shape = document.createElementNS("http://www.w3.org/2000/svg", "circle");
+                    shape.setAttribute('cx', 0);
+                    shape.setAttribute('cy', 0);
+                    shape.setAttribute('r', item.r);
+                    shape.setAttribute('class', 'actor-bg');
+                    
+                    const pov = document.createElementNS("http://www.w3.org/2000/svg", "path");
+                    const r = item.r;
+                    // Draws a prominent directional wedge pointing "Forward" (0 degrees)
+                    pov.setAttribute('d', `M -${r*0.5} -${r*0.2} L 0 -${r + 25} L ${r*0.5} -${r*0.2} Z`);
+                    pov.setAttribute('fill', 'rgba(250, 204, 21, 0.4)');
+                    pov.setAttribute('stroke', '#facc15');
+                    pov.setAttribute('stroke-width', '1.5');
+                    g.appendChild(pov);
+                }
+                
+                if(item.type === 'prop') {
+                    const dir = document.createElementNS("http://www.w3.org/2000/svg", "line");
+                    dir.setAttribute('x1', 0); dir.setAttribute('y1', 0); dir.setAttribute('x2', 0);
+                    dir.setAttribute('y2', -item.h/2 - 12);
+                    dir.setAttribute('stroke', '#38bdf8'); dir.setAttribute('stroke-width', 2);
+                    dir.setAttribute('stroke-dasharray', '3,3');
+                    dir.setAttribute('marker-end', 'url(#arrowhead)');
+                    g.appendChild(dir);
+                }
+
+                // Label
+                const text = document.createElementNS("http://www.w3.org/2000/svg", "text");
+                text.setAttribute('x', 0); text.setAttribute('y', 4);
+                text.setAttribute('text-anchor', 'middle');
+                text.setAttribute('class', 'font-mono text-[10px] font-bold pointer-events-none');
+                text.setAttribute('fill', item.type === 'arch' ? (item.subType==='window'?'#22d3ee':'#f59e0b') : '#fff');
+                text.textContent = item.title.substring(0,8);
+                text.setAttribute('transform', `scale(${1/item.scale}) rotate(${-item.rot})`);
+
+                g.appendChild(shape);
+                g.appendChild(text);
+                entityContainer.appendChild(g);
+            });
+
+            // Target Node
+            const tgt = document.createElementNS("http://www.w3.org/2000/svg", "g");
+            tgt.setAttribute('class', `draggable ${activeEntityId === 'FocalTarget' ? 'selected-glow' : ''}`);
+            tgt.setAttribute('data-id', 'FocalTarget');
+            tgt.setAttribute('transform', `translate(${sceneState.target.x}, ${sceneState.target.y})`);
+            tgt.innerHTML = `<circle cx="0" cy="0" r="10" fill="none" class="target-node" /><line x1="-12" y1="0" x2="12" y2="0" class="target-node" /><line x1="0" y1="-12" x2="0" y2="12" class="target-node" />`;
+            entityContainer.appendChild(tgt);
+
+            // Camera Node
+            const cam = document.createElementNS("http://www.w3.org/2000/svg", "g");
+            cam.setAttribute('class', `draggable ${activeEntityId === 'Camera' ? 'selected-glow' : ''}`);
+            cam.setAttribute('data-id', 'Camera');
+            cam.setAttribute('transform', `translate(${sceneState.camera.x}, ${sceneState.camera.y})`);
+            cam.innerHTML = `<circle cx="0" cy="0" r="12" class="camera-node" /><path d="M-6,-4 L6,-4 L9,0 L6,4 L-6,4 Z" fill="#166534" transform="rotate(-90)" class="pointer-events-none" />`;
+            entityContainer.appendChild(cam);
+
+            updateCameraFOV();
+            updateInspector();
+        }
+
+        function updateCameraFOV() {
+            cameraLine.setAttribute('x1', sceneState.camera.x);
+            cameraLine.setAttribute('y1', sceneState.camera.y);
+            cameraLine.setAttribute('x2', sceneState.target.x);
+            cameraLine.setAttribute('y2', sceneState.target.y);
+
+            const angle = Math.atan2(sceneState.target.y - sceneState.camera.y, sceneState.target.x - sceneState.camera.x);
+            const dist = Math.max(ROOM_WIDTH, ROOM_HEIGHT) * 1.5;
+            const spread = 0.45;
+
+            const p1x = sceneState.camera.x + Math.cos(angle - spread) * dist;
+            const p1y = sceneState.camera.y + Math.sin(angle - spread) * dist;
+            const p2x = sceneState.camera.x + Math.cos(angle + spread) * dist;
+            const p2y = sceneState.camera.y + Math.sin(angle + spread) * dist;
+
+            fovCone.setAttribute('points', `${sceneState.camera.x},${sceneState.camera.y} ${p1x},${p1y} ${p2x},${p2y}`);
+        }
+
+        // --- STREAMING_CHUNK:Interaction & Mouse Events ---
+        
+        function getMousePosition(evt) {
+            const CTM = svg.getScreenCTM();
+            if(evt.touches) evt = evt.touches[0];
+            return { x: (evt.clientX - CTM.e) / CTM.a, y: (evt.clientY - CTM.f) / CTM.d };
+        }
+
+        svg.addEventListener('mousedown', (e) => {
+            const group = e.target.closest('.draggable');
+            if (group) {
+                activeEntityId = group.getAttribute('data-id');
+                draggedEntityId = activeEntityId;
+                const ent = getEntity(activeEntityId);
+                const mp = getMousePosition(e);
+                dragOffset.x = mp.x - ent.x;
+                dragOffset.y = mp.y - ent.y;
+                renderScene();
+            } else if (e.target.id === 'bgGrid') {
+                activeEntityId = null;
+                renderScene();
+            }
+        });
+
+        svg.addEventListener('mousemove', (e) => {
+            if (draggedEntityId) {
+                e.preventDefault();
+                const mp = getMousePosition(e);
+                const ent = getEntity(draggedEntityId);
+                ent.x = Math.max(0, Math.min(ROOM_WIDTH, mp.x - dragOffset.x));
+                ent.y = Math.max(0, Math.min(ROOM_HEIGHT, mp.y - dragOffset.y));
+                renderScene();
+            }
+        });
+
+        const endDrag = () => { draggedEntityId = null; };
+        window.addEventListener('mouseup', endDrag);
+        
+        // Touch map routing
+        svg.addEventListener('touchstart', (e) => {
+            if(e.target.closest('.draggable')) e.preventDefault();
+            svg.dispatchEvent(new MouseEvent('mousedown', {clientX: e.touches[0].clientX, clientY: e.touches[0].clientY, target: e.target}));
+        }, {passive: false});
+        svg.addEventListener('touchmove', (e) => {
+            if(draggedEntityId) {
+                e.preventDefault();
+                svg.dispatchEvent(new MouseEvent('mousemove', {clientX: e.touches[0].clientX, clientY: e.touches[0].clientY}));
+            }
+        }, {passive: false});
+        window.addEventListener('touchend', endDrag);
+
+        // --- STREAMING_CHUNK:UI Control Synchronization ---
+
+        inRoomW.addEventListener('change', (e) => { sceneState.room.width = parseInt(e.target.value); renderScene(); });
+        inRoomH.addEventListener('change', (e) => { sceneState.room.height = parseInt(e.target.value); renderScene(); });
+        envInput.addEventListener('input', (e) => sceneState.environment = e.target.value);
+        autoScaleToggle.addEventListener('change', (e) => { sceneState.autoScale = e.target.checked; updateInspector(); });
+
+        function updateInspector() {
+            envInput.value = sceneState.environment;
+            inRoomW.value = sceneState.room.width;
+            inRoomH.value = sceneState.room.height;
+            autoScaleToggle.checked = sceneState.autoScale;
+
+            if (!activeEntityId) {
+                inspNoSel.classList.remove('hidden'); inspForm.classList.add('hidden');
+                return;
+            }
+            const ent = getEntity(activeEntityId);
+            inspNoSel.classList.add('hidden'); inspForm.classList.remove('hidden');
+
+            inspId.textContent = ent.id + (ent.isAnchor ? ' (ANCHOR)' : '');
+            inspTitle.value = ent.title || '';
+            inspDesc.value = ent.prompt || '';
+            
+            const isSystem = ent.type === 'system';
+            inspTitle.disabled = isSystem; inspDesc.disabled = isSystem; inspRot.disabled = isSystem;
+            
+            if (isSystem) {
+                inspRotVal.textContent = 'Auto'; inspScaleVal.textContent = 'N/A';
+                inspScale.disabled = true; inspDel.classList.add('hidden');
+            } else {
+                inspRot.value = ent.rot; inspRotVal.textContent = ent.rot + '°';
+                inspScale.value = ent.scale; inspScaleVal.textContent = parseFloat(ent.scale).toFixed(1) + 'x';
+                inspScale.disabled = (ent.type === 'actor' && sceneState.autoScale);
+                inspDel.classList.toggle('hidden', !!ent.isAnchor);
+            }
+        }
+
+        // Inspector Listeners
+        inspTitle.addEventListener('input', (e) => { if(activeEntityId) { getEntity(activeEntityId).title = e.target.value; renderScene(); }});
+        inspDesc.addEventListener('input', (e) => { if(activeEntityId) getEntity(activeEntityId).prompt = e.target.value; });
+        inspRot.addEventListener('input', (e) => { if(activeEntityId) { getEntity(activeEntityId).rot = parseInt(e.target.value); renderScene(); }});
+        inspScale.addEventListener('input', (e) => { if(activeEntityId) { getEntity(activeEntityId).scale = parseFloat(e.target.value); renderScene(); }});
+        inspDel.addEventListener('click', () => {
+            if(activeEntityId) {
+                sceneState.items = sceneState.items.filter(i => i.id !== activeEntityId);
+                activeEntityId = null; renderScene();
+            }
+        });
+
+        // Add Entities
+        document.getElementById('addActorBtn').addEventListener('click', () => {
+            entityCounter.actor++;
+            sceneState.items.push({ id: `Actor_${entityCounter.actor}`, type: 'actor', title: `New Char`, prompt: 'Standing pose', x: ROOM_WIDTH/2, y: ROOM_HEIGHT/2, r: 35, rot: 0, scale: 1.0 });
+            activeEntityId = `Actor_${entityCounter.actor}`; renderScene();
+        });
+        document.getElementById('addPropBtn').addEventListener('click', () => {
+            entityCounter.prop++;
+            sceneState.items.push({ id: `Prop_${entityCounter.prop}`, type: 'prop', isAnchor: false, title: `New Prop`, prompt: 'Description', x: ROOM_WIDTH/2, y: ROOM_HEIGHT/2, w: 100, h: 100, rot: 0, scale: 1.0 });
+            activeEntityId = `Prop_${entityCounter.prop}`; renderScene();
+        });
+        document.getElementById('addWindowBtn').addEventListener('click', () => {
+            entityCounter.arch++;
+            sceneState.items.push({ id: `Window_${entityCounter.arch}`, type: 'arch', subType:'window', title: `Window`, prompt: 'Glass window, light coming in', x: ROOM_WIDTH/2, y: 20, w: 150, h: 20, rot: 0, scale: 1.0 });
+            activeEntityId = `Window_${entityCounter.arch}`; renderScene();
+        });
+        document.getElementById('addDoorBtn').addEventListener('click', () => {
+            entityCounter.arch++;
+            sceneState.items.push({ id: `Door_${entityCounter.arch}`, type: 'arch', subType:'door', title: `Wooden Door`, prompt: 'Closed heavy wooden door', x: 20, y: ROOM_HEIGHT/2, w: 20, h: 120, rot: 0, scale: 1.0 });
+            activeEntityId = `Door_${entityCounter.arch}`; renderScene();
+        });
+
+        // --- STREAMING_CHUNK:Storage, Export, and Compiler Systems ---
+
+        // Storage
+        document.getElementById('btnSaveLocal').addEventListener('click', () => {
+            localStorage.setItem('sceneScriptState', JSON.stringify(sceneState));
+            const btn = document.getElementById('btnSaveLocal');
+            const orig = btn.innerHTML; btn.innerHTML = "Saved!"; btn.classList.add('text-green-400');
+            setTimeout(() => { btn.innerHTML = orig; btn.classList.remove('text-green-400'); }, 1500);
+        });
+        
+        document.getElementById('btnLoadLocal').addEventListener('click', () => {
+            const data = localStorage.getItem('sceneScriptState');
+            if(data) { sceneState = JSON.parse(data); renderScene(); }
+            else alert("No saved scene found in browser.");
+        });
+
+        document.getElementById('btnReset').addEventListener('click', () => {
+            if(confirm("Wipe canvas and restore default layout?")) {
+                sceneState = getDefaultState();
+                activeEntityId = null;
+                renderScene();
+            }
+        });
+
+        // JSON File I/O
+        document.getElementById('btnExportJSON').addEventListener('click', () => {
+            const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(sceneState));
+            const a = document.createElement('a');
+            a.setAttribute("href", dataStr);
+            a.setAttribute("download", "scenescript_layout.json");
+            document.body.appendChild(a); a.click(); a.remove();
+        });
+
+        document.getElementById('inputImportJSON').addEventListener('change', (e) => {
+            const file = e.target.files[0];
+            if (!file) return;
+            const reader = new FileReader();
+            reader.onload = (e) => {
+                try {
+                    const json = JSON.parse(e.target.result);
+                    if(json.room && json.items) {
+                        sceneState = json; activeEntityId = null; renderScene();
+                    } else alert("Invalid SceneScript file structure.");
+                } catch (err) { alert("Error parsing JSON."); }
+            };
+            reader.readAsText(file);
+        });
+
+        // Compiler
+        document.getElementById('computeBtn').addEventListener('click', () => {
+            const p2g = (px, py) => {
+                return { x: (px / GRID_SCALE).toFixed(1), y: ((ROOM_HEIGHT - py) / GRID_SCALE).toFixed(1) };
+            };
+
+            let yaml = `[ENV]
+Grid: X(0 to ${sceneState.room.width}ft), Y(0 to ${sceneState.room.height}ft)
+Prompt: "${sceneState.environment}"
+Scale_Logic: ${sceneState.autoScale ? 'Apply_Relativity_Scale' : 'Manual_Absolute_Scale'}
+
+[ASSETS]\n`;
+
+            sceneState.items.forEach(i => {
+                const pos = p2g(i.x, i.y);
+                yaml += `${i.id}: "${i.title}" -> Center: X${pos.x}, Y${pos.y}
+  > Desc: "${i.prompt}" | Rot: ${i.rot}° | Scale: ${i.scale}x\n`;
+            });
+
+            const camPos = p2g(sceneState.camera.x, sceneState.camera.y);
+            const tarPos = p2g(sceneState.target.x, sceneState.target.y);
+            const distPx = Math.hypot(sceneState.target.x - sceneState.camera.x, sceneState.target.y - sceneState.camera.y);
+
+            yaml += `\n[CAMERA_RIG]
+Camera_Node: X${camPos.x}, Y${camPos.y}
+Focal_Target: X${tarPos.x}, Y${tarPos.y}
+Focus_Distance: ${(distPx / GRID_SCALE).toFixed(1)}ft
+
+[RULES]
+Execute_Frustum_Culling: TRUE
+Collision_Detect: ON`;
+
+            outputText.value = yaml;
+            navigator.clipboard.writeText(yaml).then(() => {
+                const btn = document.getElementById('computeBtn');
+                const orig = btn.innerHTML; btn.innerHTML = "Copied!";
+                setTimeout(() => btn.innerHTML = orig, 2000);
+            });
+        });
+
+        document.getElementById('copyRulebookBtn').addEventListener('click', () => {
+            navigator.clipboard.writeText(SYSTEM_RULEBOOK).then(() => {
+                const btn = document.getElementById('copyRulebookBtn');
+                const orig = btn.innerHTML; btn.innerHTML = "Rulebook Copied!";
+                btn.classList.replace('text-slate-300', 'text-green-400');
+                setTimeout(() => { btn.innerHTML = orig; btn.classList.replace('text-green-400', 'text-slate-300'); }, 2000);
+            });
+        });
+
+        // Initialize
+        renderScene();
+        
+    </script>
+</body>
+</html>
